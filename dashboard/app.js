@@ -46,6 +46,17 @@
     var chainMult = 1 + model.chain_step * Math.min(Math.max(chains - 1, 0), model.chain_max_extra);
     return Math.max(1, Math.round(row.tvl_usd * row.peer_multiple * growthMult * maturity * chainMult));
   }
+  /** One sentence that says why this row ranks where it does, from its own numbers. */
+  function whyLine(row) {
+    var week = row.change_7d === null || row.change_7d === undefined
+      ? 'a week with no recorded change'
+      : (row.change_7d >= 0 ? '+' : '') + row.change_7d.toFixed(1) + '% in the last week';
+    var s = row.name + ' ranks ' + row.rank + ' because its ' + money(row.tvl_usd) + ' of TVL, valued at ' + row.peer_multiple + 'x by its ' + row.peer_count + ' live ' + (row.category || 'Other') + ' peers, gives a ' + money(row.implied_value_usd) + ' implied value after ' + week + '.';
+    if (row.maturity_multiplier > 1) s += ' Its ' + row.age_days + ' days with no token multiply it by ' + row.maturity_multiplier + 'x.';
+    if (row.growth_multiplier > 1) s += ' Strong growth multiplies it by ' + row.growth_multiplier + 'x.';
+    if (row.growth_multiplier < 1) s += ' A shrinking week multiplies it by ' + row.growth_multiplier + 'x.';
+    return s;
+  }
 
   /** Tiny DOM builder: h('div', {cls, txt, onClick, ...attrs}, ...children). */
   function h(tag, props) {
@@ -88,16 +99,20 @@
     return 30;
   }
   var PLAN_RULES = [
+    { keys: ['liquid staking', 'staking pool'], make: function (nm, amt, ch) { return 'Stake $' + amt + " of the chain's staking asset through " + nm + ' on ' + ch + ' and hold the liquid staking receipt.'; } },
     { keys: ['lend', 'cdp', 'collateral'], make: function (nm, amt, ch) { return 'Supply $' + amt + ' of USDC to ' + nm + ' on ' + ch + ' and keep the position open.'; } },
-    { keys: ['dex', 'yield', 'leveraged farm'], make: function (nm, amt, ch) { return 'Provide $' + amt + ' of liquidity to ' + nm + "'s main pool on " + ch + ' and keep the position open.'; } },
+    { keys: ['dex', 'yield aggregator', 'leveraged farm', 'farm', 'liquidity manager'], make: function (nm, amt, ch) { return 'Provide $' + amt + ' of liquidity to ' + nm + "'s main pool on " + ch + ' and keep the position open.'; } },
     { keys: ['bridge'], make: function (nm, amt, ch) { return 'Bridge $' + amt + ' of USDC to ' + ch + ' through ' + nm + ' and use the bridged funds in its app.'; } },
-    { keys: ['staking', 'restak'], make: function (nm, amt, ch) { return 'Stake $' + amt + " of the chain's staking asset through " + nm + ' and keep the receipt.'; } },
-    { keys: ['perpetual', 'derivative'], make: function (nm, amt, ch) { return 'Deposit $' + amt + ' of USDC as margin on ' + nm + ' and open one small hedge.'; } },
+    { keys: ['restak', 'staking'], make: function (nm, amt, ch) { return 'Stake $' + amt + " of the chain's staking asset through " + nm + ' and keep the receipt.'; } },
+    { keys: ['perpetual', 'derivative', 'basis trading'], make: function (nm, amt, ch) { return 'Deposit $' + amt + ' of USDC as margin on ' + nm + ' and open one small hedge.'; } },
     { keys: ['prediction'], make: function (nm, amt, ch) { return 'Fund $' + amt + ' and place one market position on ' + nm + '.'; } },
-    { keys: ['curator', 'allocator'], make: function (nm, amt, ch) { return 'Deposit $' + amt + ' into a ' + nm + ' vault on ' + ch + ' and keep the shares.'; } },
+    { keys: ['curator', 'allocator', 'aggregator'], make: function (nm, amt, ch) { return 'Deposit $' + amt + ' into a ' + nm + ' vault on ' + ch + ' and keep the shares.'; } },
     { keys: ['stable'], make: function (nm, amt, ch) { return 'Mint or deposit $' + amt + ' of the stable asset through ' + nm + ' on ' + ch + '.'; } },
     { keys: ['rwa'], make: function (nm, amt, ch) { return 'Mint $' + amt + " of the protocol's yield asset on " + ch + ' and hold it.'; } },
-    { keys: ['insurance'], make: function (nm, amt, ch) { return 'Buy $' + amt + ' of cover from ' + nm + ' on ' + ch + ' and keep the policy.'; } }
+    { keys: ['insurance'], make: function (nm, amt, ch) { return 'Buy $' + amt + ' of cover from ' + nm + ' on ' + ch + ' and keep the policy.'; } },
+    { keys: ['btc', 'bitcoin'], make: function (nm, amt, ch) { return 'Deposit $' + amt + ' of BTC into ' + nm + ' on ' + ch + ' and hold the receipt.'; } },
+    { keys: ['cedefi'], make: function (nm, amt, ch) { return 'Deposit $' + amt + ' into a ' + nm + ' vault on ' + ch + ' and keep the shares.'; } },
+    { keys: ['chain'], make: function (nm, amt, ch) { return 'Bridge $' + amt + ' of USDC to ' + nm + ' and use one app on the chain.'; } }
   ];
   function actionLine(p, amt, ch) {
     var c = (p.category || '').toLowerCase();
@@ -106,6 +121,40 @@
       if (rule.keys.some(function (k) { return c.indexOf(k) >= 0; })) return rule.make(p.name, amt, ch);
     }
     return 'Deposit $' + amt + ' of USDC into ' + p.name + ' on ' + ch + ' and keep the position open.';
+  }
+  var WEEKLY_RULES = [
+    { keys: ['liquid staking', 'staking pool', 'restak', 'staking'], make: function (nm) { return 'Claim the staking rewards on ' + nm + ' and restake them, so the position compounds.'; } },
+    { keys: ['lend', 'cdp', 'collateral'], make: function (nm, amt) { return 'Repay a slice of the borrow on ' + nm + ' and re-supply $' + amt + ', so the loan stays healthy and the activity repeats.'; } },
+    { keys: ['dex', 'yield aggregator', 'leveraged farm', 'farm', 'liquidity manager'], make: function (nm) { return 'Swap a small amount through ' + nm + "'s pool and top up the liquidity, so the position earns fees again."; } },
+    { keys: ['bridge'], make: function (nm, amt) { return 'Bridge $' + amt + ' back through ' + nm + ' and use the funds in a second app, so the bridge sees repeat use.'; } },
+    { keys: ['perpetual', 'derivative', 'basis trading'], make: function (nm) { return 'Close the hedge on ' + nm + ' and reopen it at the new funding rate, so the position stays active.'; } },
+    { keys: ['prediction'], make: function (nm) { return 'Settle one market on ' + nm + ' and open another, so the account keeps a live position.'; } },
+    { keys: ['curator', 'allocator', 'aggregator', 'cedefi'], make: function (nm) { return "Check " + nm + "'s vault allocation and rebalance if it drifted, so the shares keep earning."; } },
+    { keys: ['stable', 'rwa'], make: function (nm) { return 'Check the peg and the yield on ' + nm + ' and top up if the rate moved.'; } },
+    { keys: ['insurance'], make: function (nm) { return "Check the cover's expiry on " + nm + ' and renew it before it lapses.'; } },
+    { keys: ['btc', 'bitcoin'], make: function (nm) { return 'Check the BTC peg on ' + nm + ' and the yield it pays, and top up if the rate moved.'; } },
+    { keys: ['chain'], make: function (nm) { return 'Use one more app on ' + nm + ' this week, so the chain sees repeat activity.'; } }
+  ];
+  function weeklyLine(p, amt, ch) {
+    var c = (p.category || '').toLowerCase();
+    for (var i = 0; i < WEEKLY_RULES.length; i++) {
+      var rule = WEEKLY_RULES[i];
+      if (rule.keys.some(function (k) { return c.indexOf(k) >= 0; })) return rule.make(p.name, amt, ch);
+    }
+    return 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.';
+  }
+  function riskLine(p) {
+    var age = p.age_days;
+    if (age !== null && age !== undefined && age < 90) {
+      return 'This protocol is young (' + age + ' days on record): size the position small, verify its audit before adding funds, and never use leverage.';
+    }
+    if (p.change_7d !== null && p.change_7d !== undefined && p.change_7d <= -20) {
+      return 'TVL fell ' + Math.abs(p.change_7d).toFixed(1) + '% in a week: check whether the drop is an outflow or a price move before adding funds.';
+    }
+    if (p.tvl_usd >= 1e9) {
+      return 'At $' + (p.tvl_usd / 1e9).toFixed(1) + 'B of TVL the position is liquid, but any airdrop is split across many farmers: size for the yield, not the airdrop.';
+    }
+    return 'Size the position so a 50% drawdown costs less than a week of income, and never borrow to farm.';
   }
   function renderStep(step) {
     var s = step.text + ' Cost: ' + step.cost + '. Time: ' + step.time + '.';
@@ -120,10 +169,11 @@
     return [
       { text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', cost: 'under $3 of gas for the first transaction', time: '5 minutes' },
       { text: actionLine(p, amt, ch), cost: '$' + amt + ' of capital and about $' + (amt >= 150 ? 8 : 4) + ' of gas', time: '15 minutes to set up' },
-      { text: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.', cost: 'about $2 of gas a week', time: '10 minutes a week' },
+      { text: weeklyLine(p, amt, ch), cost: 'about $2 of gas a week', time: '10 minutes a week' },
       { text: 'Hold the position for at least ' + hold + ' days so the activity is counted in more than one snapshot.', cost: 'the $' + amt + ' stays in the position', time: hold + ' days' },
       { text: "Before you withdraw, open the protocol's own points or rewards page and claim only from the link it publishes.", cost: 'no fee to check, and never pay to claim', time: '10 minutes' },
       { text: 'Write the wallet, the dates and every transaction in a farm log so you can repeat the position or unwind it.', cost: 'nothing but the log', time: '5 minutes' },
+      { text: riskLine(p), cost: 'nothing to check, and it caps what you stake', time: '10 minutes before you add funds' },
       { text: 'When you exit, withdraw in two parts a day apart and check the position\'s value after each part, so a failed withdrawal is caught while half the funds are still in.', cost: 'about $4 of gas for the two withdrawals', time: '10 minutes over 2 days' }
     ].map(renderStep);
   }
@@ -199,6 +249,24 @@
         h('div', { cls: 'stat' }, h('span', { txt: 'Early rows below the floor' }), h('b', { txt: String(DATA.early_size) })),
         h('div', { cls: 'stat' }, h('span', { txt: 'Live-token protocols set aside' }), h('b', { txt: String(DATA.live_size) }))
       )
+    );
+  }
+  /** The top three as cards, each with its one-line reason, above the table. */
+  function spotlight() {
+    var top = DATA.rows.slice(0, 3);
+    return h('section', { cls: 'spot', 'aria-label': 'Top three' },
+      h('h2', { txt: 'Top three' }),
+      h('div', { cls: 'spot-grid' }, top.map(function (row) {
+        var why = whyLine(row).split('. ')[0] + '.';
+        return h('article', { cls: 'spot-card', tabindex: '0',
+          onClick: function () { openDrawer(row.slug); },
+          onKeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDrawer(row.slug); } } },
+          h('span', { cls: 'spot-rank', txt: '#' + row.rank }),
+          h('h3', { txt: row.name }),
+          h('p', { cls: 'spot-val', txt: money(row.implied_value_usd) + ' implied' }),
+          h('p', { cls: 'spot-why', txt: why })
+        );
+      }))
     );
   }
 
@@ -377,6 +445,7 @@
         h('div', null, h('span', { txt: 'Maturity multiplier' }), h('b', { cls: 'fig', txt: String(row.maturity_multiplier) })),
         h('div', null, h('span', { txt: 'Implied value' }), h('b', { cls: 'fig', txt: money(row.implied_value_usd) }))
       ),
+      h('p', { cls: 'why', txt: whyLine(row) }),
       h('p', { cls: 'fine', txt: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + money(again) + check + ' This is an estimate, not a price.' })
     ));
     drawer.appendChild(h('section', { cls: 'drawer-sec' },
@@ -400,6 +469,7 @@
     var shell = h('div', { cls: 'wrap' });
     shell.appendChild(masthead());
     shell.appendChild(intro());
+    shell.appendChild(spotlight());
     shell.appendChild(toolbar());
     shell.appendChild(view.tab === 'pre' ? boardTable() : liveTable());
     if (view.tab === 'pre') shell.appendChild(howtoPanel());

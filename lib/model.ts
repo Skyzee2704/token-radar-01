@@ -409,15 +409,20 @@ interface ActionRule {
 /**
  * The category's one action, as a table instead of a chain of branches: the
  * first rule whose keyword appears in the category wins. The fallback at the
- * end is a plain deposit, for categories no rule names.
+ * end is a plain deposit, for categories no rule names. Every rule names the
+ * chain and the capital, so the step is an instruction, not a slogan.
  */
 const ACTION_RULES: ActionRule[] = [
+  {
+    keys: ['liquid staking', 'staking pool'],
+    line: (n, a, c) => `Stake $${a} of the chain's staking asset through ${n} on ${c} and hold the liquid staking receipt.`,
+  },
   {
     keys: ['lend', 'cdp', 'collateral'],
     line: (n, a, c) => `Supply $${a} of USDC to ${n} on ${c} and keep the position open.`,
   },
   {
-    keys: ['dex', 'yield', 'leveraged farm'],
+    keys: ['dex', 'yield aggregator', 'leveraged farm', 'farm', 'liquidity manager'],
     line: (n, a, c) => `Provide $${a} of liquidity to ${n}'s main pool on ${c} and keep the position open.`,
   },
   {
@@ -425,11 +430,11 @@ const ACTION_RULES: ActionRule[] = [
     line: (n, a, c) => `Bridge $${a} of USDC to ${c} through ${n} and use the bridged funds in its app.`,
   },
   {
-    keys: ['staking', 'restak'],
+    keys: ['restak', 'staking'],
     line: (n, a, c) => `Stake $${a} of the chain's staking asset through ${n} and keep the receipt.`,
   },
   {
-    keys: ['perpetual', 'derivative'],
+    keys: ['perpetual', 'derivative', 'basis trading'],
     line: (n, a, c) => `Deposit $${a} of USDC as margin on ${n} and open one small hedge.`,
   },
   {
@@ -437,7 +442,7 @@ const ACTION_RULES: ActionRule[] = [
     line: (n, a, c) => `Fund $${a} and place one market position on ${n}.`,
   },
   {
-    keys: ['curator', 'allocator'],
+    keys: ['curator', 'allocator', 'aggregator'],
     line: (n, a, c) => `Deposit $${a} into a ${n} vault on ${c} and keep the shares.`,
   },
   {
@@ -452,6 +457,18 @@ const ACTION_RULES: ActionRule[] = [
     keys: ['insurance'],
     line: (n, a, c) => `Buy $${a} of cover from ${n} on ${c} and keep the policy.`,
   },
+  {
+    keys: ['btc', 'bitcoin'],
+    line: (n, a, c) => `Deposit $${a} of BTC into ${n} on ${c} and hold the receipt.`,
+  },
+  {
+    keys: ['cedefi'],
+    line: (n, a, c) => `Deposit $${a} into a ${n} vault on ${c} and keep the shares.`,
+  },
+  {
+    keys: ['chain'],
+    line: (n, a, c) => `Bridge $${a} of USDC to ${n} and use one app on the chain.`,
+  },
 ];
 
 /** The category's action line, or the plain-deposit fallback. */
@@ -463,17 +480,109 @@ function actionLine(p: SnapshotProtocol, amount: number, chain: string): string 
   return `Deposit $${amount} of USDC into ${p.name} on ${chain} and keep the position open.`;
 }
 
+/** One category rule for the weekly repeat: what to do each week to stay active. */
+interface WeeklyRule {
+  keys: string[]; // lowercase substrings of the category
+  line: (name: string, amount: number, chain: string) => string;
+}
+
+const WEEKLY_RULES: WeeklyRule[] = [
+  {
+    keys: ['liquid staking', 'staking pool', 'restak', 'staking'],
+    line: (n) => `Claim the staking rewards on ${n} and restake them, so the position compounds.`,
+  },
+  {
+    keys: ['lend', 'cdp', 'collateral'],
+    line: (n, a) => `Repay a slice of the borrow on ${n} and re-supply $${a}, so the loan stays healthy and the activity repeats.`,
+  },
+  {
+    keys: ['dex', 'yield aggregator', 'leveraged farm', 'farm', 'liquidity manager'],
+    line: (n) => `Swap a small amount through ${n}'s pool and top up the liquidity, so the position earns fees again.`,
+  },
+  {
+    keys: ['bridge'],
+    line: (n, a) => `Bridge $${a} back through ${n} and use the funds in a second app, so the bridge sees repeat use.`,
+  },
+  {
+    keys: ['perpetual', 'derivative', 'basis trading'],
+    line: (n) => `Close the hedge on ${n} and reopen it at the new funding rate, so the position stays active.`,
+  },
+  {
+    keys: ['prediction'],
+    line: (n) => `Settle one market on ${n} and open another, so the account keeps a live position.`,
+  },
+  {
+    keys: ['curator', 'allocator', 'aggregator', 'cedefi'],
+    line: (n) => `Check ${n}'s vault allocation and rebalance if it drifted, so the shares keep earning.`,
+  },
+  {
+    keys: ['stable', 'rwa'],
+    line: (n) => `Check the peg and the yield on ${n} and top up if the rate moved.`,
+  },
+  {
+    keys: ['insurance'],
+    line: (n) => `Check the cover's expiry on ${n} and renew it before it lapses.`,
+  },
+  {
+    keys: ['btc', 'bitcoin'],
+    line: (n) => `Check the BTC peg on ${n} and the yield it pays, and top up if the rate moved.`,
+  },
+  {
+    keys: ['chain'],
+    line: (n) => `Use one more app on ${n} this week, so the chain sees repeat activity.`,
+  },
+];
+
+/** The category's weekly repeat, or the plain qualifying-action fallback. */
+function weeklyLine(p: SnapshotProtocol, amount: number, chain: string): string {
+  const lowered = (p.category ?? '').toLowerCase();
+  for (const rule of WEEKLY_RULES) {
+    if (rule.keys.some((k) => lowered.includes(k))) return rule.line(p.name, amount, chain);
+  }
+  return 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.';
+}
+
 /**
- * A protocol's farm plan: seven steps, each an action with a cost and a time,
- * derived from the protocol's own record (category, chains, TVL, age) — never
- * from a hand-written list of names. The last step is the exit: how to unwind
- * safely and what to check before claiming anything.
+ * The risk line: sized from the protocol's own record. A young protocol gets
+ * a size-and-audit warning; a large one gets a note that any airdrop is split
+ * across many farmers; a sharp weekly fall gets a check-the-drop warning.
+ */
+function riskLine(p: SnapshotProtocol, age: number | null): string {
+  if (age !== null && age < 90) {
+    return (
+      `This protocol is young (${age} days on record): size the position small, ` +
+      `verify its audit before adding funds, and never use leverage.`
+    );
+  }
+  if (p.change_7d !== null && p.change_7d <= -20) {
+    return (
+      `TVL fell ${Math.abs(p.change_7d).toFixed(1)}% in a week: check whether the drop is an ` +
+      `outflow or a price move before adding funds.`
+    );
+  }
+  if (p.tvl_usd >= 1_000_000_000) {
+    return (
+      `At $${(p.tvl_usd / 1e9).toFixed(1)}B of TVL the position is liquid, but any airdrop is split ` +
+      `across many farmers: size for the yield, not the airdrop.`
+    );
+  }
+  return 'Size the position so a 50% drawdown costs less than a week of income, and never borrow to farm.';
+}
+
+/**
+ * A protocol's farm plan: eight steps, each an action with a cost and a time,
+ * derived from the protocol's own record (category, chains, TVL, age, weekly
+ * move) — never from a hand-written list of names. The action, the weekly
+ * repeat and the risk line all vary by category; the last step is the exit:
+ * how to unwind safely and what to check before claiming anything.
  */
 export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   const chain = firstChain(p);
   const amount = stakeFor(p);
   const hold = holdFor(age);
   const action = actionLine(p, amount, chain);
+  const weekly = weeklyLine(p, amount, chain);
+  const risk = riskLine(p, age);
   const gasBig = amount >= 150 ? 8 : 4;
   return [
     {
@@ -489,7 +598,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
       time: '15 minutes to set up',
     },
     {
-      text: 'Make one qualifying action each week, such as a deposit, a borrow, a swap or a vote.',
+      text: weekly,
       cost: 'about $2 of gas a week',
       time: '10 minutes a week',
     },
@@ -511,6 +620,11 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
         'so you can repeat the position or unwind it.',
       cost: 'nothing but the log',
       time: '5 minutes',
+    },
+    {
+      text: risk,
+      cost: 'nothing to check, and it caps what you stake',
+      time: '10 minutes before you add funds',
     },
     {
       text:

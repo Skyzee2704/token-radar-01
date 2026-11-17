@@ -4,7 +4,7 @@
 [![rank](https://make.fun/badge/token-radar-01/Skyzee2704/token-radar-01/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 [![reward](https://make.fun/badge/token-radar-01/Skyzee2704/token-radar-01/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
 
-Token launch radar: ranks pre-token DeFi protocols by implied launch value from a sealed DefiLlama snapshot, with a sortable dashboard, per-protocol model breakdowns and 7-step farm plans.
+Token launch radar: ranks pre-token DeFi protocols by implied launch value from a sealed DefiLlama snapshot, with a sortable dashboard, a top-three spotlight, per-protocol model breakdowns with a one-line reason for each rank, and 8-step farm plans.
 
 ## Run it
 
